@@ -5,6 +5,7 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { supabase } from './supabaseClient';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // Import screens
 import SplashScreen from './screens/SplashScreen';
@@ -16,6 +17,10 @@ import CartScreen from './screens/CartScreen';
 import PaymentScreen from './screens/PaymentScreen';
 import HistoryScreen from './screens/HistoryScreen';
 import SettingsScreen from './screens/SettingsScreen';
+import MenuItemDetailScreen from './screens/MenuItemDetailScreen';
+import OrderDetailScreen from './screens/OrderDetailScreen';
+import AboutScreen from './screens/AboutScreen';
+
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -28,15 +33,10 @@ function MainTabs() {
         tabBarIcon: ({ focused, color, size }) => {
           let iconName;
 
-          if (route.name === 'Home') {
-            iconName = focused ? 'home' : 'home-outline';
-          } else if (route.name === 'Menu') {
-            iconName = focused ? 'restaurant' : 'restaurant-outline';
-          } else if (route.name === 'History') {
-            iconName = focused ? 'time' : 'time-outline';
-          } else if (route.name === 'Settings') {
-            iconName = focused ? 'settings' : 'settings-outline';
-          }
+          if (route.name === 'Home') iconName = focused ? 'home' : 'home-outline';
+          else if (route.name === 'Menu') iconName = focused ? 'restaurant' : 'restaurant-outline';
+          else if (route.name === 'History') iconName = focused ? 'time' : 'time-outline';
+          else if (route.name === 'Settings') iconName = focused ? 'settings' : 'settings-outline';
 
           return <Ionicons name={iconName} size={size} color={color} />;
         },
@@ -54,8 +54,8 @@ function MainTabs() {
       })}
     >
       <Tab.Screen name="Home" component={HomeScreen} />
-      <Tab.Screen 
-        name="Menu" 
+      <Tab.Screen
+        name="Menu"
         component={MenuDetailScreen}
         initialParams={{ showAllCategories: true }}
       />
@@ -70,27 +70,56 @@ export default function App() {
   const [session, setSession] = useState(null);
 
   useEffect(() => {
-    // Check active session
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-    });
+    let mounted = true;
 
-    // Listen for auth changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setSession(session);
-    });
-
-    // Hide splash after 3 seconds
-    setTimeout(() => {
-      setIsLoading(false);
+    const timeoutId = setTimeout(() => {
+      if (mounted) setIsLoading(false);
     }, 3000);
 
-    return () => subscription?.unsubscribe();
+    const init = async () => {
+      try {
+        const skipOnce = await AsyncStorage.getItem('SKIP_AUTO_SIGNIN_ONCE');
+        const { data } = await supabase.auth.getSession();
+
+        if (!mounted) return;
+
+        if (skipOnce === '1') {
+          await AsyncStorage.removeItem('SKIP_AUTO_SIGNIN_ONCE');
+          setSession(null);
+        } else {
+          setSession(data?.session ?? null);
+        }
+      } catch {
+        if (mounted) setSession(null);
+      }
+    };
+
+    init();
+
+    const { data: listener } = supabase.auth.onAuthStateChange(async (event, nextSession) => {
+      if (!mounted) return;
+
+      const skipOnce = await AsyncStorage.getItem('SKIP_AUTO_SIGNIN_ONCE');
+
+      
+      if (skipOnce === '1' && event === 'SIGNED_IN') {
+        await AsyncStorage.removeItem('SKIP_AUTO_SIGNIN_ONCE');
+        setSession(null);
+        return;
+      }
+
+      setSession(nextSession ?? null);
+    });
+
+    return () => {
+      mounted = false;
+      clearTimeout(timeoutId);
+      listener?.subscription?.unsubscribe?.();
+    };
   }, []);
 
-  if (isLoading) {
-    return <SplashScreen />;
-  }
+  // ✅ render splash HARUS DI SINI (bukan di useEffect)
+  if (isLoading) return <SplashScreen />;
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
@@ -107,6 +136,10 @@ export default function App() {
               <Stack.Screen name="MenuDetail" component={MenuDetailScreen} />
               <Stack.Screen name="Cart" component={CartScreen} />
               <Stack.Screen name="Payment" component={PaymentScreen} />
+              <Stack.Screen name="MenuItemDetail" component={MenuItemDetailScreen} />
+              <Stack.Screen name="OrderDetail" component={OrderDetailScreen} />
+              <Stack.Screen name="About" component={AboutScreen} />
+
             </>
           )}
         </Stack.Navigator>
