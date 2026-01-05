@@ -62,13 +62,13 @@ foodexpress-app/
 
 ## 🎥 Video Demo
 
-**Presentasi (5 menit):** [Link YouTube]
+**Presentasi:** https://youtu.be/H5J9XOyqkgU 
 
 ---
 
 ## 📄 Dokumentasi Lengkap
 
-**Laporan UAS:** [Link ke laporan PDF]
+**Laporan UAS:**https://www.canva.com/design/DAG9MLzzAOY/NtyOeQEdGuxcD5C5pX6hDA/edit?utm_content=DAG9MLzzAOY&utm_campaign=designshare&utm_medium=link2&utm_source=sharebutton
 
 ---
 
