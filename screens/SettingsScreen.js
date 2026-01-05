@@ -13,7 +13,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../supabaseClient';
 
-export default function SettingsScreen() {
+export default function SettingsScreen({ navigation }) {
   const [user, setUser] = useState(null);
   const [profile, setProfile] = useState(null);
   const [isEditing, setIsEditing] = useState(false);
@@ -205,9 +205,13 @@ export default function SettingsScreen() {
         {/* App Info Section */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Tentang</Text>
-          
+
           <View style={styles.card}>
-            <TouchableOpacity style={styles.menuItem}>
+            <TouchableOpacity
+              style={styles.menuItem}
+              onPress={() => navigation.navigate('About')}
+              activeOpacity={0.8}
+            >
               <View style={styles.menuItemLeft}>
                 <Ionicons name="information-circle-outline" size={24} color="#666" />
                 <Text style={styles.menuItemText}>Tentang Aplikasi</Text>
@@ -215,7 +219,7 @@ export default function SettingsScreen() {
               <Ionicons name="chevron-forward" size={20} color="#999" />
             </TouchableOpacity>
 
-            <TouchableOpacity style={styles.menuItem}>
+            <TouchableOpacity style={styles.menuItem} activeOpacity={0.8}>
               <View style={styles.menuItemLeft}>
                 <Ionicons name="document-text-outline" size={24} color="#666" />
                 <Text style={styles.menuItemText}>Syarat & Ketentuan</Text>
@@ -223,7 +227,10 @@ export default function SettingsScreen() {
               <Ionicons name="chevron-forward" size={20} color="#999" />
             </TouchableOpacity>
 
-            <TouchableOpacity style={styles.menuItem}>
+            <TouchableOpacity
+              style={[styles.menuItem, { borderBottomWidth: 0 }]}
+              activeOpacity={0.8}
+            >
               <View style={styles.menuItemLeft}>
                 <Ionicons name="shield-checkmark-outline" size={24} color="#666" />
                 <Text style={styles.menuItemText}>Kebijakan Privasi</Text>
@@ -232,6 +239,7 @@ export default function SettingsScreen() {
             </TouchableOpacity>
           </View>
         </View>
+
 
         {/* Logout Button */}
         <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
