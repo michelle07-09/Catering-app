@@ -6,126 +6,93 @@ import {
   ScrollView,
   TouchableOpacity,
   Image,
-  Dimensions,
   StatusBar,
-  Animated,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../supabaseClient';
+import { useFocusEffect } from '@react-navigation/native';
+import { getCart, addToCart } from '../utils/cart';
 
-const { width } = Dimensions.get('window');
-const CARD_WIDTH = width * 0.7;
 
 export default function HomeScreen({ navigation }) {
-  const [categories, setCategories] = useState([]);
   const [menuItems, setMenuItems] = useState([]);
   const [userName, setUserName] = useState('');
-  const scrollX = new Animated.Value(0);
+  const [cartCount, setCartCount] = useState(0);
 
   useEffect(() => {
     fetchUserProfile();
-    fetchCategories();
     fetchMenuItems();
   }, []);
+  useFocusEffect(
+  React.useCallback(() => {
+    (async () => {
+      const cart = await getCart();
+      const totalQty = cart.reduce(
+        (sum, item) => sum + (item.quantity || 1),
+        0
+      );
+      setCartCount(totalQty);
+    })();
+  }, [])
+);
+
 
   const fetchUserProfile = async () => {
     const { data: { user } } = await supabase.auth.getUser();
-    if (user) {
-      const { data } = await supabase
-        .from('profiles')
-        .select('full_name')
-        .eq('id', user.id)
-        .single();
-      
-      if (data) {
-        setUserName(data.full_name);
-      }
-    }
-  };
+    if (!user) return;
 
-  const fetchCategories = async () => {
     const { data, error } = await supabase
-      .from('categories')
-      .select('*')
-      .order('id', { ascending: true });
-    
-    if (data) setCategories(data);
+      .from('profiles')
+      .select('full_name')
+      .eq('id', user.id)
+      .single();
+
+    if (!error && data) {
+      setUserName(data.full_name);
+    }
   };
 
   const fetchMenuItems = async () => {
     const { data, error } = await supabase
       .from('menu_items')
       .select('*')
-      .eq('is_available', true)
+      .order('created_at', { ascending: false })
       .limit(10);
-    
-    if (data) setMenuItems(data);
+
+    if (error) {
+      console.log('Error fetch menu:', error);
+    } else {
+      setMenuItems(data);
+    }
   };
 
-  const renderCategoryCard = (category, index) => {
-    const inputRange = [
-      (index - 1) * CARD_WIDTH,
-      index * CARD_WIDTH,
-      (index + 1) * CARD_WIDTH,
-    ];
 
-    const scale = scrollX.interpolate({
-      inputRange,
-      outputRange: [0.9, 1, 0.9],
-      extrapolate: 'clamp',
-    });
-
-    const opacity = scrollX.interpolate({
-      inputRange,
-      outputRange: [0.7, 1, 0.7],
-      extrapolate: 'clamp',
-    });
-
-    return (
-      <TouchableOpacity
-        key={category.id}
-        onPress={() => navigation.navigate('MenuDetail', { categoryId: category.id })}
-        activeOpacity={0.9}
-      >
-        <Animated.View
-          style={[
-            styles.categoryCard,
-            {
-              transform: [{ scale }],
-              opacity,
-            },
-          ]}
-        >
-          <Image
-            source={{ uri: category.image_url }}
-            style={styles.categoryImage}
-          />
-          <View style={styles.categoryOverlay}>
-            <Text style={styles.categoryName}>{category.name}</Text>
-          </View>
-        </Animated.View>
-      </TouchableOpacity>
-    );
-  };
 
   return (
     <View style={styles.container}>
       <StatusBar barStyle="dark-content" />
-      
+
       {/* Header */}
       <View style={styles.header}>
         <View>
-          <Text style={styles.greeting}>Halo, {userName || 'User'}! 👋</Text>
-          <Text style={styles.headerSubtitle}>Mau pesan apa hari ini?</Text>
+          <Text style={styles.greeting}>
+            Halo, {userName || 'User'}! 👋
+          </Text>
+          <Text style={styles.headerSubtitle}>
+            Mau pesan apa hari ini?
+          </Text>
         </View>
+
         <TouchableOpacity
           style={styles.cartButton}
           onPress={() => navigation.navigate('Cart')}
         >
           <Ionicons name="cart" size={24} color="#FF6B4A" />
-          <View style={styles.cartBadge}>
-            <Text style={styles.cartBadgeText}>0</Text>
-          </View>
+          {cartCount > 0 && (
+            <View style={styles.cartBadge}>
+              <Text style={styles.cartBadgeText}>{cartCount}</Text>
+            </View>
+          )}
         </TouchableOpacity>
       </View>
 
@@ -133,45 +100,30 @@ export default function HomeScreen({ navigation }) {
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.scrollContent}
       >
-        {/* Categories Section */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Kategori Menu</Text>
-          <Animated.ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.categoriesContainer}
-            snapToInterval={CARD_WIDTH + 15}
-            decelerationRate="fast"
-            onScroll={Animated.event(
-              [{ nativeEvent: { contentOffset: { x: scrollX } } }],
-              { useNativeDriver: true }
-            )}
-            scrollEventThrottle={16}
-          >
-            {categories.map((category, index) => renderCategoryCard(category, index))}
-          </Animated.ScrollView>
-        </View>
-
-        {/* Popular Menu Section */}
+        {/* Menu Section */}
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Menu Populer</Text>
             <TouchableOpacity onPress={() => navigation.navigate('Menu')}>
               <Text style={styles.seeAll}>Lihat Semua</Text>
             </TouchableOpacity>
+
           </View>
 
-          {menuItems.map((item) => (
+          {menuItems.map(item => (
             <TouchableOpacity
               key={item.id}
               style={styles.menuCard}
-              onPress={() => navigation.navigate('MenuDetail', { menuId: item.id })}
+              onPress={() =>
+                navigation.navigate('MenuItemDetail', { menuId: item.id })
+              }
               activeOpacity={0.8}
             >
               <Image
                 source={{ uri: item.image_url }}
                 style={styles.menuImage}
               />
+
               <View style={styles.menuInfo}>
                 <Text style={styles.menuName} numberOfLines={2}>
                   {item.name}
@@ -179,11 +131,20 @@ export default function HomeScreen({ navigation }) {
                 <Text style={styles.menuDescription} numberOfLines={2}>
                   {item.description}
                 </Text>
+
                 <View style={styles.menuFooter}>
                   <Text style={styles.menuPrice}>
                     Rp {item.price.toLocaleString('id-ID')}
                   </Text>
-                  <TouchableOpacity style={styles.addButton}>
+
+                  <TouchableOpacity
+                    style={styles.addButton}
+                    onPress={async () => {
+                      const next = await addToCart(item);
+                      const totalQty = next.reduce((s, i) => s + i.quantity, 0);
+                      setCartCount(totalQty);
+                    }}
+                  >
                     <Ionicons name="add" size={20} color="white" />
                   </TouchableOpacity>
                 </View>
@@ -195,6 +156,7 @@ export default function HomeScreen({ navigation }) {
     </View>
   );
 }
+
 
 const styles = StyleSheet.create({
   container: {
@@ -269,32 +231,7 @@ const styles = StyleSheet.create({
     color: '#FF6B4A',
     fontWeight: '600',
   },
-  categoriesContainer: {
-    paddingHorizontal: 20,
-    gap: 15,
-  },
-  categoryCard: {
-    width: CARD_WIDTH,
-    height: 180,
-    borderRadius: 20,
-    overflow: 'hidden',
-    marginRight: 15,
-  },
-  categoryImage: {
-    width: '100%',
-    height: '100%',
-  },
-  categoryOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0, 0, 0, 0.3)',
-    justifyContent: 'flex-end',
-    padding: 20,
-  },
-  categoryName: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: 'white',
-  },
+  
   menuCard: {
     flexDirection: 'row',
     backgroundColor: 'white',
@@ -348,3 +285,4 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
 });
+
