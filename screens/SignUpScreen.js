@@ -13,6 +13,8 @@ import {
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { supabase } from '../supabaseClient';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
 
 export default function SignUpScreen({ navigation }) {
   const [fullName, setFullName] = useState('');
@@ -21,7 +23,7 @@ export default function SignUpScreen({ navigation }) {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [loading, setLoading] = useState(false);
-  
+
   const fadeAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
@@ -33,7 +35,8 @@ export default function SignUpScreen({ navigation }) {
   }, []);
 
   const handleSignUp = async () => {
-    // Validation
+    if (loading) return;
+
     if (!fullName || !email || !phone || !password || !confirmPassword) {
       Alert.alert('Error', 'Mohon isi semua field');
       return;
@@ -51,43 +54,51 @@ export default function SignUpScreen({ navigation }) {
 
     setLoading(true);
 
-    // Sign up user
-    const { data, error } = await supabase.auth.signUp({
-      email,
-      password,
-    });
+      try {
+        await AsyncStorage.setItem('SKIP_AUTO_SIGNIN_ONCE', '1');
 
-    if (error) {
-      setLoading(false);
-      Alert.alert('Pendaftaran Gagal', error.message);
-      return;
-    }
+        const { data, error } = await supabase.auth.signUp({
+          email,
+          password,
+          options: { data: { full_name: fullName, phone } },
+        });
 
-    // Create profile
-    if (data.user) {
-      const { error: profileError } = await supabase
-        .from('profiles')
-        .insert([
+        if (error) throw error;
+
+        const user = data?.user;
+        if (user?.id) {
+          const { error: profileError } = await supabase
+            .from('profiles')
+            .upsert(
+              [{ id: user.id, full_name: fullName, phone }],
+              { onConflict: 'id' }
+            );
+
+          if (profileError) throw profileError;
+        }
+
+        await supabase.auth.signOut();
+        await AsyncStorage.removeItem('SKIP_AUTO_SIGNIN_ONCE');
+
+        setLoading(false);
+
+        Alert.alert('Berhasil!', 'Akun berhasil dibuat. Silakan login.', [
           {
-            id: data.user.id,
-            full_name: fullName,
-            phone: phone,
+            text: 'OK',
+            onPress: () =>
+              navigation.reset({
+                index: 0,
+                routes: [{ name: 'Login' }],
+              }),
           },
         ]);
-
-      setLoading(false);
-
-      if (profileError) {
-        Alert.alert('Error', 'Gagal membuat profile: ' + profileError.message);
-      } else {
-        Alert.alert(
-          'Berhasil!',
-          'Akun berhasil dibuat. Silakan login.',
-          [{ text: 'OK', onPress: () => navigation.navigate('Login') }]
-        );
+      } catch (err) {
+        setLoading(false);
+        await AsyncStorage.removeItem('SKIP_AUTO_SIGNIN_ONCE');
+        console.error('Detail Error:', err?.message || err);
+        Alert.alert('Pendaftaran Gagal', err?.message || 'Terjadi kesalahan');
       }
-    }
-  };
+    };
 
   return (
     <LinearGradient colors={['#FF6B4A', '#FF8C6B']} style={styles.container}>
@@ -195,45 +206,17 @@ export default function SignUpScreen({ navigation }) {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  keyboardView: {
-    flex: 1,
-  },
-  scrollContent: {
-    flexGrow: 1,
-    justifyContent: 'center',
-    padding: 20,
-  },
-  header: {
-    alignItems: 'center',
-    marginBottom: 30,
-    marginTop: 20,
-  },
-  logo: {
-    fontSize: 50,
-    marginBottom: 10,
-  },
-  title: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    color: 'white',
-    marginBottom: 5,
-  },
-  subtitle: {
-    fontSize: 14,
-    color: 'white',
-    opacity: 0.9,
-  },
+  container: { flex: 1 },
+  keyboardView: { flex: 1 },
+  scrollContent: { flexGrow: 1, justifyContent: 'center', padding: 20 },
+  header: { alignItems: 'center', marginBottom: 30, marginTop: 20 },
+  logo: { fontSize: 50, marginBottom: 10 },
+  title: { fontSize: 28, fontWeight: 'bold', color: 'white', marginBottom: 5 },
+  subtitle: { fontSize: 14, color: 'white', opacity: 0.9 },
   formContainer: {
     backgroundColor: 'white',
     borderRadius: 20,
     padding: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.2,
-    shadowRadius: 20,
     elevation: 10,
     marginBottom: 20,
   },
@@ -243,77 +226,17 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#f0f0f0',
   },
-  activeTab: {
-    flex: 1,
-    paddingVertical: 12,
-    borderBottomWidth: 3,
-    borderBottomColor: '#FF6B4A',
-  },
-  inactiveTab: {
-    flex: 1,
-    paddingVertical: 12,
-  },
-  activeTabText: {
-    textAlign: 'center',
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#FF6B4A',
-  },
-  inactiveTabText: {
-    textAlign: 'center',
-    fontSize: 16,
-    color: '#999',
-  },
-  form: {
-    gap: 8,
-  },
-  label: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#333',
-    marginBottom: 5,
-    marginTop: 5,
-  },
-  input: {
-    backgroundColor: '#f5f5f5',
-    borderRadius: 10,
-    padding: 15,
-    fontSize: 14,
-    color: '#333',
-    marginBottom: 5,
-  },
-  signUpButton: {
-    backgroundColor: '#FF6B4A',
-    borderRadius: 10,
-    padding: 16,
-    alignItems: 'center',
-    marginTop: 15,
-    shadowColor: '#FF6B4A',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 5,
-  },
-  signUpButtonDisabled: {
-    opacity: 0.6,
-  },
-  signUpButtonText: {
-    color: 'white',
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
-  loginPrompt: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    marginTop: 15,
-  },
-  loginText: {
-    color: '#666',
-    fontSize: 14,
-  },
-  loginLink: {
-    color: '#FF6B4A',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-});
+  activeTab: { flex: 1, paddingVertical: 12, borderBottomWidth: 3, borderBottomColor: '#FF6B4A' },
+  inactiveTab: { flex: 1, paddingVertical: 12 },
+  activeTabText: { textAlign: 'center', fontSize: 16, fontWeight: '600', color: '#FF6B4A' },
+  inactiveTabText: { textAlign: 'center', fontSize: 16, color: '#999' },
+  form: { gap: 8 },
+  label: { fontSize: 14, fontWeight: '600', color: '#333', marginBottom: 5, marginTop: 5 },
+  input: { backgroundColor: '#f5f5f5', borderRadius: 10, padding: 15, fontSize: 14, color: '#333' },
+  signUpButton: { backgroundColor: '#FF6B4A', borderRadius: 10, padding: 16, alignItems: 'center', marginTop: 15 },
+  signUpButtonDisabled: { opacity: 0.6 },
+  signUpButtonText: { color: 'white', fontSize: 16, fontWeight: 'bold' },
+  loginPrompt: { flexDirection: 'row', justifyContent: 'center', marginTop: 15 },
+  loginText: { color: '#666', fontSize: 14 },
+  loginLink: { color: '#FF6B4A', fontSize: 14, fontWeight: '600' },
+}); 
