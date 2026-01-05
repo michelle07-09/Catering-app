@@ -11,7 +11,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../supabaseClient';
 
-export default function HistoryScreen() {
+export default function HistoryScreen({ navigation }) {
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(false);
 
@@ -21,26 +21,49 @@ export default function HistoryScreen() {
 
   const fetchOrders = async () => {
     setLoading(true);
-    const { data: { user } } = await supabase.auth.getUser();
 
-    if (user) {
+    try {
+      const { data: userRes, error: userErr } = await supabase.auth.getUser();
+      if (userErr) throw userErr;
+
+      const user = userRes?.user;
+
+      if (!user?.id) {
+        setOrders([]);
+        setLoading(false);
+        return;
+      }
+
       const { data, error } = await supabase
         .from('orders')
         .select(`
-          *,
+          id,
+          user_id,
+          total_amount,
+          status,
+          created_at,
+          scheduled_date,
+          payment_method,
           order_items (
             quantity,
             price,
-            menu_items (name)
+            menu_items ( name )
           )
         `)
         .eq('user_id', user.id)
         .order('created_at', { ascending: false });
 
-      if (data) {
-        setOrders(data);
+      if (error) {
+        console.log('fetchOrders error:', error);
+        setOrders([]);
+      } else {
+        setOrders(Array.isArray(data) ? data : []);
       }
+    } catch (e) {
+      console.log('fetchOrders fatal:', e?.message || e);
+      setOrders([]);
     }
+
     setLoading(false);
   };
 
@@ -70,13 +93,14 @@ export default function HistoryScreen() {
       case 'cancelled':
         return 'Dibatalkan';
       default:
-        return status;
+        return status || '-';
     }
   };
 
-  const formatDate = (dateString) => {
-    const date = new Date(dateString);
-    return date.toLocaleDateString('id-ID', {
+  const formatDateTime = (dateString) => {
+    if (!dateString) return '-';
+    const d = new Date(dateString);
+    return d.toLocaleDateString('id-ID', {
       day: '2-digit',
       month: 'long',
       year: 'numeric',
@@ -85,11 +109,38 @@ export default function HistoryScreen() {
     });
   };
 
+  const formatOnlyDate = (dateString) => {
+    if (!dateString) return '-';
+    const d = new Date(`${dateString}T00:00:00`);
+    return d.toLocaleDateString('id-ID', {
+      day: '2-digit',
+      month: 'long',
+      year: 'numeric',
+    });
+  };
+
+  const getPaymentMeta = (method) => {
+    if (!method) return { text: 'Belum dipilih', icon: 'help-circle-outline' };
+
+    const m = String(method).toLowerCase();
+
+    if (m === 'cash' || m.includes('cod')) {
+      return { text: 'Cash on Delivery', icon: 'cash-outline' };
+    }
+    if (m === 'transfer') {
+      return { text: 'Transfer Bank', icon: 'card-outline' };
+    }
+    if (m === 'ewallet' || m === 'e-wallet') {
+      return { text: 'E-Wallet', icon: 'phone-portrait-outline' };
+    }
+
+    return { text: method, icon: 'card-outline' };
+  };
+
   return (
     <View style={styles.container}>
       <StatusBar barStyle="dark-content" />
-      
-      {/* Header */}
+
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Riwayat Pesanan</Text>
         <TouchableOpacity onPress={fetchOrders}>
@@ -102,11 +153,7 @@ export default function HistoryScreen() {
         contentContainerStyle={styles.contentContainer}
         showsVerticalScrollIndicator={false}
         refreshControl={
-          <RefreshControl
-            refreshing={loading}
-            onRefresh={fetchOrders}
-            tintColor="#FF6B4A"
-          />
+          <RefreshControl refreshing={loading} onRefresh={fetchOrders} tintColor="#FF6B4A" />
         }
       >
         {orders.length === 0 ? (
@@ -118,76 +165,68 @@ export default function HistoryScreen() {
             </Text>
           </View>
         ) : (
-          orders.map((order) => (
-            <View key={order.id} style={styles.orderCard}>
-              <View style={styles.orderHeader}>
-                <View style={styles.orderHeaderLeft}>
-                  <Text style={styles.orderId}>Order #{order.id}</Text>
-                  <Text style={styles.orderDate}>
-                    {formatDate(order.created_at)}
-                  </Text>
-                </View>
-                <View
-                  style={[
-                    styles.statusBadge,
-                    { backgroundColor: getStatusColor(order.status) + '20' },
-                  ]}
-                >
-                  <Text
-                    style={[
-                      styles.statusText,
-                      { color: getStatusColor(order.status) },
-                    ]}
-                  >
-                    {getStatusText(order.status)}
-                  </Text>
-                </View>
-              </View>
+          orders.map((order) => {
+            const paymentMeta = getPaymentMeta(order.payment_method);
 
-              <View style={styles.divider} />
-
-              <View style={styles.orderItems}>
-                {order.order_items.map((item, index) => (
-                  <View key={index} style={styles.orderItem}>
-                    <View style={styles.orderItemBullet} />
-                    <Text style={styles.orderItemText}>
-                      {item.menu_items.name} x{item.quantity}
+            return (
+              <TouchableOpacity
+                key={order.id}
+                style={styles.orderCard}
+                activeOpacity={0.9}
+                onPress={() => navigation?.navigate?.('OrderDetail', { orderId: order.id })}
+              >
+                <View style={styles.orderHeader}>
+                  <View style={styles.orderHeaderLeft}>
+                    <Text style={styles.orderId}>Order #{order.id}</Text>
+                    <Text style={styles.orderDate}>{formatDateTime(order.created_at)}</Text>
+                    <Text style={styles.scheduleDate}>
+                      Dipesan untuk: {formatOnlyDate(order.scheduled_date)}
                     </Text>
                   </View>
-                ))}
-              </View>
 
-              <View style={styles.divider} />
+                  <View
+                    style={[
+                      styles.statusBadge,
+                      { backgroundColor: getStatusColor(order.status) + '20' },
+                    ]}
+                  >
+                    <Text style={[styles.statusText, { color: getStatusColor(order.status) }]}>
+                      {getStatusText(order.status)}
+                    </Text>
+                  </View>
+                </View>
 
-              <View style={styles.orderFooter}>
-                <View style={styles.orderInfo}>
-                  <Ionicons name="card-outline" size={16} color="#666" />
-                  <Text style={styles.orderInfoText}>
-                    {order.payment_method === 'cash'
-                      ? 'Cash on Delivery'
-                      : order.payment_method === 'transfer'
-                      ? 'Transfer Bank'
-                      : 'E-Wallet'}
-                  </Text>
-                </View>
-                <View style={styles.orderTotal}>
-                  <Text style={styles.orderTotalLabel}>Total:</Text>
-                  <Text style={styles.orderTotalAmount}>
-                    Rp {parseFloat(order.total_amount).toLocaleString('id-ID')}
-                  </Text>
-                </View>
-              </View>
+                <View style={styles.divider} />
 
-              {order.delivery_address && (
-                <View style={styles.addressContainer}>
-                  <Ionicons name="location-outline" size={16} color="#666" />
-                  <Text style={styles.addressText} numberOfLines={2}>
-                    {order.delivery_address}
-                  </Text>
+                <View style={styles.orderItems}>
+                  {(order.order_items || []).map((item, index) => (
+                    <View key={index} style={styles.orderItem}>
+                      <View style={styles.orderItemBullet} />
+                      <Text style={styles.orderItemText}>
+                        {item?.menu_items?.name || 'Menu'} x{item.quantity}
+                      </Text>
+                    </View>
+                  ))}
                 </View>
-              )}
-            </View>
-          ))
+
+                <View style={styles.divider} />
+
+                <View style={styles.orderFooter}>
+                  <View style={styles.orderInfo}>
+                    <Ionicons name={paymentMeta.icon} size={16} color="#666" />
+                    <Text style={styles.orderInfoText}>{paymentMeta.text}</Text>
+                  </View>
+
+                  <View style={styles.orderTotal}>
+                    <Text style={styles.orderTotalLabel}>Total:</Text>
+                    <Text style={styles.orderTotalAmount}>
+                      Rp {Number(order.total_amount || 0).toLocaleString('id-ID')}
+                    </Text>
+                  </View>
+                </View>
+              </TouchableOpacity>
+            );
+          })
         )}
       </ScrollView>
     </View>
@@ -195,10 +234,7 @@ export default function HistoryScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#f8f8f8',
-  },
+  container: { flex: 1, backgroundColor: '#f8f8f8' },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -210,34 +246,14 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#f0f0f0',
   },
-  headerTitle: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#333',
-  },
-  content: {
-    flex: 1,
-  },
-  contentContainer: {
-    padding: 20,
-  },
-  emptyState: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 80,
-  },
-  emptyStateTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#333',
-    marginTop: 20,
-  },
-  emptyStateText: {
-    fontSize: 14,
-    color: '#666',
-    marginTop: 10,
-    textAlign: 'center',
-  },
+  headerTitle: { fontSize: 24, fontWeight: 'bold', color: '#333' },
+  content: { flex: 1 },
+  contentContainer: { padding: 20 },
+
+  emptyState: { alignItems: 'center', justifyContent: 'center', paddingVertical: 80 },
+  emptyStateTitle: { fontSize: 20, fontWeight: 'bold', color: '#333', marginTop: 20 },
+  emptyStateText: { fontSize: 14, color: '#666', marginTop: 10, textAlign: 'center' },
+
   orderCard: {
     backgroundColor: 'white',
     borderRadius: 15,
@@ -249,97 +265,26 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 3,
   },
-  orderHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-  },
-  orderHeaderLeft: {
-    flex: 1,
-  },
-  orderId: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#333',
-  },
-  orderDate: {
-    fontSize: 12,
-    color: '#666',
-    marginTop: 4,
-  },
-  statusBadge: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 20,
-  },
-  statusText: {
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  divider: {
-    height: 1,
-    backgroundColor: '#f0f0f0',
-    marginVertical: 12,
-  },
-  orderItems: {
-    gap: 8,
-  },
-  orderItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  orderItemBullet: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: '#FF6B4A',
-    marginRight: 10,
-  },
-  orderItemText: {
-    fontSize: 14,
-    color: '#666',
-    flex: 1,
-  },
-  orderFooter: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  orderInfo: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  orderInfoText: {
-    fontSize: 12,
-    color: '#666',
-  },
-  orderTotal: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  orderTotalLabel: {
-    fontSize: 12,
-    color: '#666',
-  },
-  orderTotalAmount: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#FF6B4A',
-  },
-  addressContainer: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    marginTop: 12,
-    paddingTop: 12,
-    borderTopWidth: 1,
-    borderTopColor: '#f0f0f0',
-    gap: 6,
-  },
-  addressText: {
-    fontSize: 12,
-    color: '#666',
-    flex: 1,
-  },
+  orderHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
+  orderHeaderLeft: { flex: 1 },
+  orderId: { fontSize: 16, fontWeight: 'bold', color: '#333' },
+  orderDate: { fontSize: 12, color: '#666', marginTop: 4 },
+  scheduleDate: { fontSize: 12, color: '#FF6B4A', marginTop: 4, fontWeight: '500' },
+
+  statusBadge: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20 },
+  statusText: { fontSize: 12, fontWeight: '600' },
+
+  divider: { height: 1, backgroundColor: '#f0f0f0', marginVertical: 12 },
+
+  orderItems: { gap: 8 },
+  orderItem: { flexDirection: 'row', alignItems: 'center' },
+  orderItemBullet: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#FF6B4A', marginRight: 10 },
+  orderItemText: { fontSize: 14, color: '#666', flex: 1 },
+
+  orderFooter: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  orderInfo: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  orderInfoText: { fontSize: 12, color: '#666' },
+  orderTotal: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  orderTotalLabel: { fontSize: 12, color: '#666' },
+  orderTotalAmount: { fontSize: 16, fontWeight: 'bold', color: '#FF6B4A' },
 });
