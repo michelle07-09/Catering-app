@@ -39,7 +39,6 @@ export default function PaymentScreen({ navigation, route }) {
   const loadSummary = async () => {
     setLoadingSummary(true);
     try {
-      // Ambil items + prefill alamat/catatan/metode bayar jika sudah ada
       const { data, error } = await supabase
         .from('orders')
         .select(`
@@ -99,14 +98,13 @@ export default function PaymentScreen({ navigation, route }) {
         return;
       }
 
-      // Update order yang SUDAH ADA
       const { error } = await supabase
         .from('orders')
         .update({
           payment_method: selectedPayment,
           delivery_address: deliveryAddress.trim(),
           notes: notes.trim(),
-          status: 'processing', // setelah konfirmasi pembayaran -> diproses
+          status: 'processing', 
           updated_at: new Date().toISOString(),
         })
         .eq('id', orderId);
