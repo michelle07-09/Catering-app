@@ -44,13 +44,6 @@ Aplikasi pemesanan catering dan makanan berbasis React Native (Expo) dengan back
 
 2. **Scan QR Code** (lihat video presentasi atau contact kami)
 
-3. **Test aplikasi!**
-
-### Test Account
-```
-Email: test@foodexpress.com
-Password: test123456
-```
 
 ---
 
@@ -66,11 +59,6 @@ foodexpress-app/
 
 ---
 
-## 📦 Download APK
-
-**Android APK:** [Link tersedia setelah build]
-
----
 
 ## 🎥 Video Demo
 
