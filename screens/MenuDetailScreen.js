@@ -8,16 +8,33 @@ import {
   Image,
   StatusBar,
   Alert,
+  TextInput,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../supabaseClient';
+import { useFocusEffect } from '@react-navigation/native';
+import { getCart, addToCart } from '../utils/cart';
+
 
 export default function MenuDetailScreen({ navigation, route }) {
-  const { categoryId, showAllCategories } = route.params || {};
+  const { category, showAllCategories } = route.params || {};
+
   const [categories, setCategories] = useState([]);
-  const [selectedCategory, setSelectedCategory] = useState(categoryId || null);
+  const [selectedCategory, setSelectedCategory] = useState(category || null);
   const [menuItems, setMenuItems] = useState([]);
-  const [cart, setCart] = useState([]);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [cartCount, setCartCount] = useState(0);
+
+  useFocusEffect(
+    React.useCallback(() => {
+      (async () => {
+        const cart = await getCart();
+        setCartCount(
+          cart.reduce((sum, item) => sum + (item.quantity || 1), 0)
+        );
+      })();
+    }, [])
+  );
 
   useEffect(() => {
     fetchCategories();
@@ -25,121 +42,145 @@ export default function MenuDetailScreen({ navigation, route }) {
 
   useEffect(() => {
     if (selectedCategory) {
-      fetchMenuItems(selectedCategory);
+      fetchMenuItemsByCategory(selectedCategory);
     } else if (showAllCategories) {
+      fetchAllMenuItems();
+    } else {
+      // default: load all kalau belum ada kategori
       fetchAllMenuItems();
     }
   }, [selectedCategory, showAllCategories]);
 
   const fetchCategories = async () => {
-    const { data } = await supabase
-      .from('categories')
-      .select('*')
-      .order('id', { ascending: true });
-    
-    if (data) {
-      setCategories(data);
-      if (!selectedCategory && data.length > 0 && !showAllCategories) {
-        setSelectedCategory(data[0].id);
-      }
+    const { data, error } = await supabase
+      .from('menu_items')
+      .select('category');
+
+    if (error) {
+      console.log('Error fetch categories:', error);
+      return;
+    }
+
+    const unique = Array.from(
+      new Set((data || []).map((x) => x.category).filter(Boolean))
+    );
+
+    setCategories(unique);
+
+    // set default category kalau belum ada
+    if (!selectedCategory && unique.length > 0 && !showAllCategories) {
+      setSelectedCategory(unique[0]);
     }
   };
 
-  const fetchMenuItems = async (catId) => {
-    const { data } = await supabase
+  const fetchMenuItemsByCategory = async (cat) => {
+    const { data, error } = await supabase
       .from('menu_items')
       .select('*')
-      .eq('category_id', catId)
-      .eq('is_available', true)
+      .eq('category', cat)
       .order('name', { ascending: true });
-    
-    if (data) setMenuItems(data);
+
+    if (error) {
+      console.log('Error fetch menu by category:', error);
+      setMenuItems([]);
+      return;
+    }
+
+    setMenuItems(data || []);
   };
 
   const fetchAllMenuItems = async () => {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('menu_items')
       .select('*')
-      .eq('is_available', true)
       .order('name', { ascending: true });
-    
-    if (data) setMenuItems(data);
-  };
 
-  const addToCart = (item) => {
-    const existingItem = cart.find(cartItem => cartItem.id === item.id);
-    
-    if (existingItem) {
-      setCart(cart.map(cartItem =>
-        cartItem.id === item.id
-          ? { ...cartItem, quantity: cartItem.quantity + 1 }
-          : cartItem
-      ));
-    } else {
-      setCart([...cart, { ...item, quantity: 1 }]);
+    if (error) {
+      console.log('Error fetch all menu:', error);
+      setMenuItems([]);
+      return;
     }
 
-    Alert.alert('Berhasil!', `${item.name} ditambahkan ke keranjang`);
+    setMenuItems(data || []);
   };
+
+  
 
   return (
     <View style={styles.container}>
       <StatusBar barStyle="dark-content" />
-      
+
       {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity
-          style={styles.backButton}
-          onPress={() => navigation.goBack()}
-        >
+        <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
           <Ionicons name="arrow-back" size={24} color="#333" />
         </TouchableOpacity>
+
         <Text style={styles.headerTitle}>Menu</Text>
+
         <TouchableOpacity
           style={styles.cartButton}
-          onPress={() => navigation.navigate('Cart', { cartItems: cart })}
+          onPress={() => navigation.navigate('Cart')}
         >
           <Ionicons name="cart-outline" size={24} color="#333" />
-          {cart.length > 0 && (
+          {cartCount > 0 && (
             <View style={styles.cartBadge}>
-              <Text style={styles.cartBadgeText}>{cart.length}</Text>
+              <Text style={styles.cartBadgeText}>{cartCount}</Text>
             </View>
           )}
         </TouchableOpacity>
       </View>
 
+      <View style={styles.searchContainer}>
+          <Ionicons name="search" size={20} color="#FF6B4A" />
+          <TextInput
+            placeholder="Cari menu..."
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            style={styles.searchInput}
+            placeholderTextColor="#FF6B4A"
+          />
+      </View>
+
+      
+
+
       {/* Categories Filter */}
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        style={styles.categoriesFilter}
-        contentContainerStyle={styles.categoriesFilterContent}
-      >
-        {categories.map((category) => (
-          <TouchableOpacity
-            key={category.id}
+      {categories.length > 0 && (
+  <View style={styles.categoriesWrapper}>
+    <ScrollView
+      horizontal
+      showsHorizontalScrollIndicator={false}
+      contentContainerStyle={styles.categoriesFilterContent}
+    >
+      {categories.map((cat) => (
+        <TouchableOpacity
+          key={cat}
+          style={[
+            styles.categoryFilterButton,
+            selectedCategory === cat && styles.categoryFilterButtonActive,
+          ]}
+          onPress={() => setSelectedCategory(cat)}
+        >
+          <Text
             style={[
-              styles.categoryFilterButton,
-              selectedCategory === category.id && styles.categoryFilterButtonActive,
+              styles.categoryFilterText,
+              selectedCategory === cat && styles.categoryFilterTextActive,
             ]}
-            onPress={() => setSelectedCategory(category.id)}
           >
-            <Text
-              style={[
-                styles.categoryFilterText,
-                selectedCategory === category.id && styles.categoryFilterTextActive,
-              ]}
-            >
-              {category.name}
-            </Text>
-          </TouchableOpacity>
-        ))}
-      </ScrollView>
+            {cat}
+          </Text>
+        </TouchableOpacity>
+      ))}
+    </ScrollView>
+  </View>
+)}
+
 
       {/* Menu Items Grid */}
       <ScrollView
         style={styles.menuContainer}
-        contentContainerStyle={styles.menuContent}
+        contentContainerStyle={styles.categoriesFilterContent}
         showsVerticalScrollIndicator={false}
       >
         {menuItems.length === 0 ? (
@@ -149,16 +190,18 @@ export default function MenuDetailScreen({ navigation, route }) {
           </View>
         ) : (
           <View style={styles.menuGrid}>
-            {menuItems.map((item) => (
+            {menuItems
+            .filter((item) =>
+              item.name.toLowerCase().includes(searchQuery.toLowerCase())
+            )
+            .map((item) => (
               <TouchableOpacity
                 key={item.id}
                 style={styles.menuItemCard}
                 activeOpacity={0.9}
+                onPress={() => navigation.navigate('MenuItemDetail', { menuId: item.id })}
               >
-                <Image
-                  source={{ uri: item.image_url }}
-                  style={styles.menuItemImage}
-                />
+                <Image source={{ uri: item.image_url }} style={styles.menuItemImage} />
                 <View style={styles.menuItemInfo}>
                   <Text style={styles.menuItemName} numberOfLines={2}>
                     {item.name}
@@ -168,12 +211,17 @@ export default function MenuDetailScreen({ navigation, route }) {
                   </Text>
                   <View style={styles.menuItemFooter}>
                     <Text style={styles.menuItemPrice}>
-                      Rp {item.price.toLocaleString('id-ID')}
+                      Rp {Number(item.price || 0).toLocaleString('id-ID')}
                     </Text>
                     <TouchableOpacity
                       style={styles.addToCartButton}
-                      onPress={() => addToCart(item)}
+                      onPress={async () => {
+                        await addToCart(item);
+                        const cart = await getCart();
+                        setCartCount(cart.reduce((s, i) => s + i.quantity, 0));
+                      }}
                     >
+
                       <Ionicons name="add" size={20} color="white" />
                     </TouchableOpacity>
                   </View>
@@ -186,6 +234,7 @@ export default function MenuDetailScreen({ navigation, route }) {
     </View>
   );
 }
+
 
 const styles = StyleSheet.create({
   container: {
@@ -200,7 +249,7 @@ const styles = StyleSheet.create({
     paddingTop: 50,
     paddingBottom: 15,
     backgroundColor: 'white',
-    borderBottomWidth: 1,
+    borderBottomWidth: 2,
     borderBottomColor: '#f0f0f0',
   },
   backButton: {
@@ -238,28 +287,34 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: 'bold',
   },
-  categoriesFilter: {
-    backgroundColor: 'white',
-    borderBottomWidth: 1,
-    borderBottomColor: '#f0f0f0',
-  },
+  categoriesWrapper: {
+  backgroundColor: 'white',
+  height: 60,                 
+  justifyContent: 'center',
+  borderBottomWidth: 1,
+  borderBottomColor: '#f0f0f0',
+},
   categoriesFilterContent: {
-    paddingHorizontal: 20,
-    paddingVertical: 15,
-    gap: 10,
+    paddingHorizontal: 16,
+    paddingVertical: 0,
+    gap: 8,
+    alignItems: 'center',
   },
-  categoryFilterButton: {
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    borderRadius: 20,
-    backgroundColor: '#f5f5f5',
-    marginRight: 10,
-  },
+ categoryFilterButton: {
+  height: 35,                 
+  paddingHorizontal: 20,
+  borderRadius: 25,
+  backgroundColor: '#f5f5f5',
+  marginRight: 3,
+  justifyContent: 'center',
+  alignItems: 'center',
+},
+
   categoryFilterButtonActive: {
     backgroundColor: '#FF6B4A',
   },
   categoryFilterText: {
-    fontSize: 14,
+    fontSize: 18,
     color: '#666',
     fontWeight: '500',
   },
@@ -268,7 +323,8 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   menuContainer: {
-    flex: 1,
+    backgroundColor: 'transparent',
+    paddingTop: 8,
   },
   menuContent: {
     padding: 15,
@@ -286,13 +342,16 @@ const styles = StyleSheet.create({
   menuGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    justifyContent: 'space-between',
+    justifyContent: 'flex-start',
+    paddingHorizontal: 15,
+    rowGap: 15,
+    columnGap: 12,
   },
   menuItemCard: {
-    width: '48%',
+    width: '47%',
     backgroundColor: 'white',
     borderRadius: 15,
-    marginBottom: 15,
+    marginBottom: 0,
     overflow: 'hidden',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
@@ -336,4 +395,20 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
+    searchContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'white',
+    margin: 16,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+  },
+  searchInput: {
+    flex: 1,
+    height: 40,
+    marginLeft: 8,
+    fontSize: 14,
+  },
+
 });
+
